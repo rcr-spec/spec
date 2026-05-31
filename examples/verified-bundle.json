@@ -1,0 +1,87 @@
+{
+  "rankigi_proof_bundle_schema": "1.5",
+  "exported_at_utc": "2026-05-30T17:42:01.123Z",
+  "receipt6": "a1b2c3",
+  "envelope": {
+    "passport_key_fingerprint": "9f3c0a7b1e4d2c5f6a8b0e7d3c9f1a4b6e8d2c0a5b7f1e3d9c2a8b6f4e0d7c3a",
+    "passport_public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAoI8+bGiHpg5AFVf01Tbs8/I9WY+T0+U+7Ma7p1CjvrQ=\n-----END PUBLIC KEY-----\n"
+  },
+  "events": [
+    {
+      "action": "mail.send",
+      "agent_id": "00000000-0000-0000-0000-00000000a001",
+      "org_id": "00000000-0000-0000-0000-00000000b001",
+      "chain_id": null,
+      "canon_id": "rankigi.mail.v1",
+      "canon_version": "1",
+      "nonce": "n-7f3a9c2e",
+      "occurred_at": "2026-05-30T17:42:00.001Z",
+      "payload": {
+        "to": "recipient@example.com",
+        "subject": "Quarterly report",
+        "closure_binding": "tx-2026-05-30-9f3c"
+      },
+      "tool": "resend",
+      "severity": null,
+      "passport_fingerprint": "9f3c0a7b1e4d2c5f6a8b0e7d3c9f1a4b6e8d2c0a5b7f1e3d9c2a8b6f4e0d7c3a",
+      "signature_hash": null,
+      "signature": "EXAMPLE_BASE64_ED25519_SIGNATURE_PLACEHOLDER==",
+      "hash": "a1b2c3d4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f607182930a1b2c3d4e5f",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "chain_index": 0,
+      "hash_version": 4
+    }
+  ],
+  "rcr_receipts": [
+    {
+      "rcr_version": "1.0.0-rc1",
+      "receipt_id": "resend:msg_01HXYZ123ABCDEF456GH",
+      "issued_at": "2026-05-30T17:42:02.500Z",
+      "source": {
+        "vendor": "resend",
+        "product": "transactional-email",
+        "api_version": "2024-07-01"
+      },
+      "action": {
+        "class": "mail.send",
+        "subject": "recipient@example.com",
+        "effect": "delivered"
+      },
+      "evidence": {
+        "vendor_payload_hash": "f8e7d6c5b4a3928170615243f8e7d6c5b4a3928170615243f8e7d6c5b4a39281",
+        "dkim": "v=1; a=rsa-sha256; d=example-mailer.com; s=resend; t=1748627522; bh=...; b=..."
+      },
+      "chain": {
+        "previous_receipt_hash": null,
+        "agent_event_hash": "a1b2c3d4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f607182930a1b2c3d4e5f",
+        "binding_proof": null
+      },
+      "claim": {
+        "strength": "vendor_signed",
+        "what_proven": "Resend's mail relay observed this message body and accepted it for delivery to the recipient MX with the DKIM signature shown.",
+        "what_not_proven": "That the recipient read the message, or that the recipient's mailbox provider delivered it to the inbox."
+      },
+      "integrity": {
+        "canonicalization": "rcr-jcs-1",
+        "hash_alg": "sha256",
+        "receipt_hash": "deadbeef00112233445566778899aabbccddeeff0011223344556677889900aa"
+      }
+    }
+  ],
+  "rekor_anchor": {
+    "log_index": 138472019,
+    "anchor_payload_hash": "c0ffee0011223344556677889900aabbccddeeff0011223344556677889900cc"
+  },
+  "rfc3161_timestamp": {
+    "tsa_url": "https://freetsa.org/tsr",
+    "tsa_timestamp": "2026-05-30T17:42:30.000Z",
+    "tsr_token_base64": "BASE64_TSR_PLACEHOLDER",
+    "tsa_cert_chain_pem": "-----BEGIN CERTIFICATE-----\nPLACEHOLDER_CERT\n-----END CERTIFICATE-----\n",
+    "message_imprint_hash": "11223344556677889900aabbccddeeff00112233445566778899aabbccddeeff"
+  },
+  "verify_with": {
+    "script": "https://rankigi.com/verify.py",
+    "usage": "python3 verify.py --pubkey-from-network rankigi-bundle-a1b2c3.json",
+    "pubkey_endpoint": "https://rankigi.com/api/proof/pubkey?agent_id=00000000-0000-0000-0000-00000000a001"
+  }
+}

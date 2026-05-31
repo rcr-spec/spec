@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rcr-spec.org/schema/rcr-receipt-v1.json",
+  "title": "RCR/1 Receipt",
+  "description": "Canonical Receipt Commitment Record, version 1. See SPEC.md section 4.",
+  "type": "object",
+  "required": ["rcr_version", "receipt_id", "issued_at", "source", "action", "evidence", "chain", "claim", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "rcr_version": {
+      "type": "string",
+      "const": "1.0.0-rc1"
+    },
+    "receipt_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "URI or vendor identifier that uniquely names this receipt."
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": ["vendor"],
+      "additionalProperties": false,
+      "properties": {
+        "vendor": { "type": "string", "minLength": 1 },
+        "product": { "type": "string" },
+        "api_version": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["class", "effect"],
+      "additionalProperties": false,
+      "properties": {
+        "class": {
+          "type": "string",
+          "description": "Dotted class identifier. Examples: mail.send, payment.charge, document.signed, code.commit."
+        },
+        "subject": {
+          "description": "String or object identifying the artifact this receipt is about."
+        },
+        "effect": {
+          "type": "string",
+          "enum": ["attempted", "accepted", "delivered", "failed", "reversed"]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vendor_payload_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "vendor_signature": { "type": "string", "contentEncoding": "base64" },
+        "vendor_lookup_token": { "type": "string" },
+        "dkim": { "type": "string" },
+        "tsa_token": { "type": "string", "contentEncoding": "base64" },
+        "tsa_cert_chain_pem": { "type": "string" },
+        "rekor_log_index": { "type": "integer", "minimum": 0 },
+        "regulator_attestation": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "chain": {
+      "type": "object",
+      "required": ["agent_event_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "previous_receipt_hash": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "agent_event_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "binding_proof": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "required": ["strength", "what_proven"],
+      "additionalProperties": false,
+      "properties": {
+        "strength": {
+          "type": "string",
+          "enum": [
+            "customer_asserted",
+            "vendor_lookup_token",
+            "vendor_signed",
+            "notarized",
+            "qualified_seal",
+            "regulator_attested",
+            "public_ledger"
+          ]
+        },
+        "what_proven": { "type": "string", "minLength": 1 },
+        "what_not_proven": { "type": "string" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["canonicalization", "hash_alg", "receipt_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "canonicalization": { "type": "string", "const": "rcr-jcs-1" },
+        "hash_alg": { "type": "string", "const": "sha256" },
+        "receipt_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "description": "SHA-256 hex over the canonical JSON of the entire receipt with this field excluded."
+        }
+      }
+    }
+  }
+}

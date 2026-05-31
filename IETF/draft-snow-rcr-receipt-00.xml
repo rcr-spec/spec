@@ -1,0 +1,927 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="rfc2629.xslt"?>
+<!DOCTYPE rfc [
+  <!ENTITY nbsp    "&#160;">
+  <!ENTITY zwsp   "&#8203;">
+  <!ENTITY nbhy   "&#8209;">
+  <!ENTITY wj     "&#8288;">
+]>
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     ipr="trust200902"
+     docName="draft-snow-rcr-receipt-00"
+     category="std"
+     submissionType="IETF"
+     consensus="true"
+     xml:lang="en"
+     version="3">
+
+  <front>
+    <title abbrev="RCR/1 Receipt Format">
+      RCR/1: Receipt Commitment Record Format for AI Agent Actions
+    </title>
+    <seriesInfo name="Internet-Draft" value="draft-snow-rcr-receipt-00"/>
+
+    <author fullname="Wesley Snow" initials="W." surname="Snow">
+      <organization>RANKIGI Inc.</organization>
+      <address>
+        <postal>
+          <street/>
+          <city/>
+          <region/>
+          <code/>
+          <country>United States of America</country>
+        </postal>
+        <email>wes@rankigi.com</email>
+      </address>
+    </author>
+
+    <date year="2026" month="May" day="24"/>
+
+    <area>Security</area>
+    <workgroup>Independent Submission</workgroup>
+
+    <keyword>AI</keyword>
+    <keyword>audit</keyword>
+    <keyword>receipts</keyword>
+    <keyword>governance</keyword>
+    <keyword>canonical JSON</keyword>
+    <keyword>compliance</keyword>
+
+    <abstract>
+      <t>
+        This document specifies RCR/1 (Receipt Commitment Record version 1),
+        a canonical JSON format for representing vendor-native receipts
+        produced by AI agent actions. RCR/1 defines a structured record
+        with mandatory fields for source identity, action classification,
+        effect status, cryptographic evidence, chain linkage, and bounded
+        claims. Records are linked via hash chaining using SHA-256 with
+        RFC 8785 canonical JSON serialization. RCR/1 addresses
+        record-keeping requirements from the EU AI Act (Regulation
+        2024/1689) Article 12, ISO/IEC 42001, SOC 2 Trust Services
+        Criteria, and HIPAA audit controls. The format is vendor-neutral
+        and designed to translate receipts from any external system into
+        a single verifiable canonical form.
+      </t>
+    </abstract>
+  </front>
+
+  <middle>
+
+    <section anchor="introduction" numbered="true">
+      <name>Introduction</name>
+      <t>
+        Autonomous AI agents increasingly act on behalf of humans and
+        organizations across heterogeneous external systems: payment
+        processors, identity providers, ticketing platforms, healthcare
+        electronic data interchange, e-commerce checkouts, government
+        portals, and many others. Each such system produces its own
+        receipt or confirmation artifact in a vendor-specific format,
+        with vendor-specific identifiers, signatures, and semantics.
+        The result is that the proof that an agent performed a given
+        action is fragmented across dozens of incompatible record
+        formats, which makes downstream verification, regulatory
+        attestation, and dispute resolution operationally infeasible.
+      </t>
+      <t>
+        This document specifies RCR/1, a canonical JSON receipt format
+        designed to translate any vendor-native receipt into a single
+        verifiable structure. An RCR/1 record carries a bounded set of
+        required fields, an explicit claim strength taxonomy that
+        prevents over-attestation, optional cryptographic evidence
+        from the originating vendor, and a chain pointer linking it
+        to a prior receipt. Records are hashed with SHA-256 over
+        RFC 8785 JSON Canonicalization Scheme (JCS) output to produce
+        a stable receipt identifier.
+      </t>
+      <t>
+        RCR/1 is complementary to draft-sharif-agent-audit-trail
+        ("Agent Audit Trail", AAT). AAT specifies an internal, agent-
+        centric log of the reasoning, tool calls, and decisions an
+        agent makes within its own execution environment. RCR/1
+        specifies an external translation of the receipts that an
+        agent's actions cause to be issued by third-party systems.
+        The two formats are designed to coexist: an AAT entry MAY
+        reference an RCR/1 record by its receipt hash, and an RCR/1
+        record MAY reference an AAT entry as the originating
+        decision.
+      </t>
+    </section>
+
+    <section anchor="conventions" numbered="true">
+      <name>Conventions and Terminology</name>
+      <t>
+        The key words "MUST", "MUST NOT", "REQUIRED", "SHALL",
+        "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",
+        "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document
+        are to be interpreted as described in BCP 14
+        <xref target="RFC2119"/> <xref target="RFC8174"/> when, and
+        only when, they appear in all capitals, as shown here.
+      </t>
+      <t>The following terms are used throughout this document.</t>
+      <dl>
+        <dt>receipt</dt>
+        <dd>
+          A structured record attesting that a specific action
+          occurred in an external system, formatted according to
+          this specification.
+        </dd>
+        <dt>adapter</dt>
+        <dd>
+          Software that translates a vendor-native confirmation
+          artifact into an RCR/1 record.
+        </dd>
+        <dt>claim</dt>
+        <dd>
+          A typed assertion within a receipt, qualified by a
+          strength level defined in <xref target="strength"/>.
+        </dd>
+        <dt>issuer</dt>
+        <dd>
+          The party that produced and signed the RCR/1 record.
+          The issuer is typically the operator of the adapter,
+          not the underlying vendor.
+        </dd>
+        <dt>subject</dt>
+        <dd>
+          The agent or principal on whose behalf the underlying
+          action was performed.
+        </dd>
+        <dt>effect</dt>
+        <dd>
+          The observable outcome of the action: success, failure,
+          partial, or pending.
+        </dd>
+        <dt>chain</dt>
+        <dd>
+          An ordered append-only sequence of RCR/1 records linked
+          by inclusion of each record's receipt hash in the next
+          record's previous_receipt_hash field.
+        </dd>
+      </dl>
+    </section>
+
+    <section anchor="format" numbered="true">
+      <name>RCR/1 Record Format</name>
+      <t>
+        An RCR/1 record is a JSON object. All field names are
+        lowercase ASCII. All timestamps are RFC 3339 strings in
+        UTC with second precision and a trailing "Z". All
+        identifiers are UUIDs as specified in <xref target="RFC4122"/>
+        unless explicitly noted otherwise.
+      </t>
+
+      <section anchor="required-fields" numbered="true">
+        <name>Required Fields</name>
+        <t>Every RCR/1 record MUST contain the following fields.</t>
+        <dl>
+          <dt>version</dt>
+          <dd>String. MUST be the literal "rcr/1".</dd>
+          <dt>receipt_id</dt>
+          <dd>String. A UUIDv4 unique to this record.</dd>
+          <dt>issued_at</dt>
+          <dd>String. RFC 3339 UTC timestamp of issuance.</dd>
+          <dt>issuer</dt>
+          <dd>
+            Object with required string fields "id" and "name",
+            identifying the party producing this record.
+          </dd>
+          <dt>subject</dt>
+          <dd>
+            Object with required string field "agent_id" and
+            optional string field "principal_id".
+          </dd>
+          <dt>source</dt>
+          <dd>
+            Object identifying the originating vendor system,
+            with required string fields "vendor" and "endpoint".
+          </dd>
+          <dt>action</dt>
+          <dd>
+            Object with required string fields "type" and
+            "category". Defined categories are listed in
+            <xref target="format"/>.
+          </dd>
+          <dt>effect</dt>
+          <dd>
+            String. One of "success", "failure", "partial",
+            "pending".
+          </dd>
+          <dt>chain</dt>
+          <dd>Object. See <xref target="chain"/>.</dd>
+          <dt>evidence</dt>
+          <dd>Object. See <xref target="evidence"/>.</dd>
+          <dt>claims</dt>
+          <dd>Array. See <xref target="claims"/>.</dd>
+        </dl>
+      </section>
+
+      <section anchor="chain" numbered="true">
+        <name>chain Object</name>
+        <t>
+          The chain object links a record to its predecessor in
+          an append-only sequence.
+        </t>
+        <dl>
+          <dt>chain_id</dt>
+          <dd>String. UUIDv4 identifying the chain.</dd>
+          <dt>sequence</dt>
+          <dd>Integer. Zero-based ordinal of this record.</dd>
+          <dt>previous_receipt_hash</dt>
+          <dd>
+            String. The 64-character lowercase hexadecimal
+            SHA-256 of the prior record's canonical form, or
+            the literal "GENESIS" if sequence is 0.
+          </dd>
+        </dl>
+      </section>
+
+      <section anchor="evidence" numbered="true">
+        <name>evidence Object</name>
+        <t>
+          The evidence object carries cryptographic artifacts
+          obtained from the underlying vendor or notarization
+          service.
+        </t>
+        <dl>
+          <dt>witness_class</dt>
+          <dd>String. See <xref target="witness"/>.</dd>
+          <dt>vendor_signature</dt>
+          <dd>
+            Optional string. Base64url of any signature obtained
+            from the vendor.
+          </dd>
+          <dt>vendor_signature_alg</dt>
+          <dd>
+            Optional string. IANA-registered signature algorithm
+            identifier if vendor_signature is present.
+          </dd>
+          <dt>rfc3161_timestamp</dt>
+          <dd>
+            Optional string. Base64url of an RFC 3161
+            TimeStampToken <xref target="RFC3161"/> binding the
+            receipt hash to a trusted time.
+          </dd>
+          <dt>anchor</dt>
+          <dd>
+            Optional object describing an external anchor (for
+            example a transparency log inclusion proof).
+          </dd>
+        </dl>
+      </section>
+
+      <section anchor="claims" numbered="true">
+        <name>claims Array</name>
+        <t>
+          The claims array carries typed factual assertions about
+          the action. Each element is an object with the following
+          fields.
+        </t>
+        <dl>
+          <dt>type</dt>
+          <dd>
+            String. The semantic type of the claim, for example
+            "amount_charged", "delivery_address_hash",
+            "appointment_time".
+          </dd>
+          <dt>value</dt>
+          <dd>String, number, boolean, or null.</dd>
+          <dt>strength</dt>
+          <dd>
+            String. One of the seven levels defined in
+            <xref target="strength"/>.
+          </dd>
+          <dt>source_ref</dt>
+          <dd>
+            Optional string. Free-form reference into the
+            originating vendor artifact (for example a JSON
+            pointer or vendor field name).
+          </dd>
+        </dl>
+        <t>
+          A receipt MUST NOT include any claim at a strength level
+          higher than the adapter can substantiate from the
+          underlying vendor evidence.
+        </t>
+      </section>
+
+      <section anchor="strength" numbered="true">
+        <name>Claim Strength Taxonomy</name>
+        <t>
+          RCR/1 defines a seven-level taxonomy. Implementations
+          MUST use one of these literals and MUST NOT introduce
+          private strength levels.
+        </t>
+        <ol>
+          <li>customer_asserted</li>
+          <li>vendor_lookup_token</li>
+          <li>vendor_signed</li>
+          <li>notarized</li>
+          <li>qualified_seal</li>
+          <li>regulator_attested</li>
+          <li>public_ledger</li>
+        </ol>
+        <t>Full semantics are given in <xref target="strength-details"/>.</t>
+      </section>
+
+      <section anchor="witness" numbered="true">
+        <name>Witness Classes</name>
+        <t>
+          The witness_class field in the evidence object
+          classifies the strongest available cryptographic
+          binding. Defined values are:
+        </t>
+        <dl>
+          <dt>none</dt>
+          <dd>No vendor cryptographic evidence available.</dd>
+          <dt>hmac</dt>
+          <dd>Shared-secret HMAC computed by the vendor.</dd>
+          <dt>signed</dt>
+          <dd>Asymmetric signature from a vendor key.</dd>
+          <dt>tsa</dt>
+          <dd>RFC 3161 timestamp from a trusted authority.</dd>
+          <dt>transparency_log</dt>
+          <dd>Inclusion in a public append-only log.</dd>
+          <dt>blockchain</dt>
+          <dd>Inclusion in a public distributed ledger.</dd>
+        </dl>
+      </section>
+
+      <section anchor="hash" numbered="true">
+        <name>Receipt Hash Computation</name>
+        <t>
+          The receipt hash is computed as follows:
+        </t>
+        <ol>
+          <li>Construct the receipt JSON object containing all
+              required fields described above.</li>
+          <li>Serialize the object using RFC 8785 JSON
+              Canonicalization Scheme <xref target="RFC8785"/>.</li>
+          <li>Compute SHA-256 over the resulting octet
+              sequence.</li>
+          <li>Encode the digest as 64 lowercase hexadecimal
+              characters.</li>
+        </ol>
+        <t>
+          The receipt hash is not stored within the record it
+          identifies; it is carried in the next record's
+          previous_receipt_hash field and in any external index.
+        </t>
+      </section>
+    </section>
+
+    <section anchor="canonicalization" numbered="true">
+      <name>Canonicalization Profile rcr-jcs-1</name>
+
+      <section anchor="jcs" numbered="true">
+        <name>RFC 8785 JCS</name>
+        <t>
+          RCR/1 canonicalization is the JSON Canonicalization
+          Scheme <xref target="RFC8785"/> with the additional
+          constraints stated in this section. The combined
+          profile is named "rcr-jcs-1".
+        </t>
+      </section>
+
+      <section anchor="no-float" numbered="true">
+        <name>No Float Rule</name>
+        <t>
+          RCR/1 records MUST NOT contain JSON numbers with a
+          fractional component or exponent. Monetary amounts MUST
+          be encoded as integers in the smallest indivisible unit
+          (for example cents) alongside an explicit currency
+          claim. This eliminates floating-point canonicalization
+          ambiguity entirely.
+        </t>
+      </section>
+
+      <section anchor="binary" numbered="true">
+        <name>Binary Encoding</name>
+        <t>
+          All binary values (signatures, timestamps, hashes
+          encoded as bytes, raw certificates) MUST be encoded as
+          base64url without padding, per <xref target="RFC4648"/>
+          Section 5. Hex-encoded digests intended for human
+          readability MUST use 64 lowercase characters.
+        </t>
+      </section>
+
+      <section anchor="hash-alg" numbered="true">
+        <name>Receipt Hash Algorithm</name>
+        <t>
+          The receipt hash algorithm in RCR/1 is SHA-256. A
+          future RCR profile MAY define an additional algorithm;
+          such a profile MUST use a distinct version literal in
+          the version field.
+        </t>
+      </section>
+    </section>
+
+    <section anchor="strength-details" numbered="true">
+      <name>Claim Strength Taxonomy</name>
+      <t>
+        This section defines the seven claim strength levels in
+        full. Levels are listed from weakest to strongest. A
+        receipt MAY contain claims at multiple levels.
+      </t>
+
+      <section numbered="true">
+        <name>customer_asserted</name>
+        <t>
+          The value was supplied by the principal or the agent
+          and has not been confirmed by any external party.
+          Example: an end user types a shipping address into a
+          form; the address is recorded as customer_asserted
+          until the carrier confirms it.
+        </t>
+      </section>
+
+      <section numbered="true">
+        <name>vendor_lookup_token</name>
+        <t>
+          The vendor returned an opaque identifier that can be
+          re-presented to the vendor to retrieve the underlying
+          fact. The vendor has not cryptographically signed
+          anything. Example: a Stripe charge ID returned without
+          a webhook signature.
+        </t>
+      </section>
+
+      <section numbered="true">
+        <name>vendor_signed</name>
+        <t>
+          The vendor provided a cryptographic signature, HMAC,
+          or webhook signature over the asserted fact. Example:
+          a Stripe webhook signed with the standard webhook
+          secret, validated by the adapter.
+        </t>
+      </section>
+
+      <section numbered="true">
+        <name>notarized</name>
+        <t>
+          The fact is bound to a trusted timestamp from an
+          RFC 3161 <xref target="RFC3161"/> TSA or equivalent,
+          and that timestamp covers the receipt hash. Example: a
+          FreeTSA TimeStampToken over the SHA-256 of the RCR/1
+          record.
+        </t>
+      </section>
+
+      <section numbered="true">
+        <name>qualified_seal</name>
+        <t>
+          The fact is signed under a qualified electronic
+          signature or qualified electronic seal as defined by
+          the eIDAS Regulation, or an equivalent national scheme.
+          Example: a qualified seal applied by a trust service
+          provider.
+        </t>
+      </section>
+
+      <section numbered="true">
+        <name>regulator_attested</name>
+        <t>
+          The fact has been attested by a regulator or accredited
+          third party operating under a published audit
+          framework. Example: a healthcare claim acknowledgement
+          from a CMS-accredited clearinghouse.
+        </t>
+      </section>
+
+      <section numbered="true">
+        <name>public_ledger</name>
+        <t>
+          The fact, or its hash, has been included in a publicly
+          verifiable append-only log or distributed ledger such
+          that any third party can independently confirm
+          inclusion. Example: a Sigstore Rekor log inclusion
+          proof or a transaction in a public blockchain.
+        </t>
+      </section>
+    </section>
+
+    <section anchor="privacy" numbered="true">
+      <name>Privacy Requirements</name>
+
+      <section anchor="pii" numbered="true">
+        <name>Personal Data Hashing</name>
+        <t>
+          Personal data, as defined by GDPR Article 4(1) or
+          equivalent regimes, MUST NOT appear in plaintext in an
+          RCR/1 record. Such values MUST be replaced with a
+          SHA-256 hash of the canonical form, optionally salted
+          with a per-subject salt held separately. The
+          corresponding claim type SHOULD carry a "_hash"
+          suffix, for example "shipping_address_hash".
+        </t>
+      </section>
+
+      <section anchor="phi" numbered="true">
+        <name>PHI</name>
+        <t>
+          Protected Health Information, as defined by 45 CFR
+          164.514, MUST NOT appear in plaintext in an RCR/1
+          record. Implementations operating in HIPAA-regulated
+          environments MUST treat all health-related claim
+          values as PHI and apply the hashing requirement in
+          <xref target="pii"/>. Adapters MUST NOT include free-
+          text clinical notes in any claim, even hashed.
+        </t>
+      </section>
+
+      <section anchor="privilege" numbered="true">
+        <name>Attorney-Client Privilege</name>
+        <t>
+          Adapters that observe communications protected by
+          attorney-client privilege or equivalent professional
+          secrecy regimes MUST NOT encode the content of those
+          communications into claim values. Only the existence,
+          time, and counterparty (hashed per
+          <xref target="pii"/>) of such communications MAY be
+          recorded.
+        </t>
+      </section>
+    </section>
+
+    <section anchor="security" numbered="true">
+      <name>Security Considerations</name>
+
+      <section anchor="replay" numbered="true">
+        <name>Replay Attacks</name>
+        <t>
+          An adversary in possession of a valid RCR/1 record
+          could attempt to replay it into a different chain.
+          The combination of chain_id, sequence, and
+          previous_receipt_hash binds each record to a specific
+          position in a specific chain; verifiers MUST reject a
+          record whose previous_receipt_hash does not equal the
+          hash of the actual prior record at sequence minus one
+          in the same chain.
+        </t>
+      </section>
+
+      <section anchor="rotation" numbered="true">
+        <name>Key Rotation</name>
+        <t>
+          Issuer keys SHOULD be rotated on a published schedule.
+          A rotation event SHOULD itself be recorded as an RCR/1
+          record at the head of the next chain segment, and the
+          new issuer public key SHOULD be discoverable via a
+          stable well-known endpoint controlled by the issuer.
+          Verifiers encountering a record signed under a
+          superseded key MUST consult the issuer's published
+          rotation history before treating the record as
+          invalid.
+        </t>
+      </section>
+
+      <section anchor="hmac" numbered="true">
+        <name>HMAC Secret Exposure</name>
+        <t>
+          A claim at strength vendor_signed based on a shared
+          HMAC secret is only as strong as the secret. If the
+          secret leaks, any party with the secret can forge
+          records. Adapters SHOULD prefer asymmetric signatures
+          over HMAC where the vendor supports them, and MUST
+          treat HMAC secrets as bearer credentials with strict
+          access controls and rotation.
+        </t>
+      </section>
+
+      <section anchor="pq" numbered="true">
+        <name>Post-Quantum</name>
+        <t>
+          RCR/1 mandates SHA-256 for receipt hashing and does
+          not constrain vendor signature algorithms. SHA-256 is
+          believed to retain at least 128 bits of preimage
+          security against currently anticipated quantum
+          attacks, which is acceptable for the chain-binding
+          use case. Asymmetric signatures used by vendors or
+          issuers may need to migrate to post-quantum algorithms
+          over the lifetime of long-lived archives. A future
+          version of this specification MAY mandate a post-
+          quantum hash or signature; such a version will use a
+          distinct version literal.
+        </t>
+      </section>
+    </section>
+
+    <section anchor="iana" numbered="true">
+      <name>IANA Considerations</name>
+
+      <section numbered="true">
+        <name>Media Type Registration</name>
+        <t>
+          IANA is requested to register the following media type
+          in the "Media Types" registry, per <xref target="RFC6838"/>.
+        </t>
+        <dl>
+          <dt>Type name:</dt><dd>application</dd>
+          <dt>Subtype name:</dt><dd>rcr+json</dd>
+          <dt>Required parameters:</dt><dd>N/A</dd>
+          <dt>Optional parameters:</dt>
+          <dd>version (default "rcr/1")</dd>
+          <dt>Encoding considerations:</dt><dd>binary (UTF-8)</dd>
+          <dt>Security considerations:</dt>
+          <dd>See <xref target="security"/> of this document.</dd>
+          <dt>Interoperability considerations:</dt>
+          <dd>
+            Records MUST conform to the canonicalization profile
+            rcr-jcs-1 defined in <xref target="canonicalization"/>.
+          </dd>
+          <dt>Published specification:</dt>
+          <dd>This document.</dd>
+          <dt>Applications that use this media type:</dt>
+          <dd>
+            AI agent governance systems, audit trail processors,
+            compliance reporting pipelines.
+          </dd>
+          <dt>Fragment identifier considerations:</dt><dd>None.</dd>
+          <dt>Person and email address to contact for further
+              information:</dt>
+          <dd>Wesley Snow, wes@rankigi.com</dd>
+          <dt>Intended usage:</dt><dd>COMMON</dd>
+          <dt>Restrictions on usage:</dt><dd>None</dd>
+          <dt>Author:</dt><dd>Wesley Snow</dd>
+          <dt>Change controller:</dt><dd>IETF</dd>
+        </dl>
+      </section>
+
+      <section numbered="true">
+        <name>Extension Namespace Registry</name>
+        <t>
+          IANA is requested to establish the "RCR/1 Extension
+          Namespace" registry. Entries register a reverse-DNS
+          prefix that an organization may use to namespace
+          private extension fields within an RCR/1 record.
+          Registration policy is First Come First Served per
+          <xref target="RFC8126"/>. Each entry contains:
+        </t>
+        <dl>
+          <dt>Prefix:</dt>
+          <dd>A reverse-DNS prefix, for example "com.example".</dd>
+          <dt>Contact:</dt>
+          <dd>Name and email of the registrant.</dd>
+          <dt>Reference:</dt>
+          <dd>A stable URL describing the extension.</dd>
+        </dl>
+        <t>
+          Field names within a registered namespace MUST be
+          prefixed with the registered prefix followed by a
+          colon, for example "com.example:internal_ref".
+          Verifiers that do not recognize a namespaced field
+          MUST preserve it byte-for-byte when re-canonicalizing.
+        </t>
+      </section>
+    </section>
+
+  </middle>
+
+  <back>
+
+    <references>
+      <name>References</name>
+
+      <references>
+        <name>Normative References</name>
+
+        <reference anchor="RFC2119" target="https://www.rfc-editor.org/info/rfc2119">
+          <front>
+            <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+            <author initials="S." surname="Bradner" fullname="S. Bradner"/>
+            <date year="1997" month="March"/>
+          </front>
+          <seriesInfo name="BCP" value="14"/>
+          <seriesInfo name="RFC" value="2119"/>
+        </reference>
+
+        <reference anchor="RFC8174" target="https://www.rfc-editor.org/info/rfc8174">
+          <front>
+            <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+            <author initials="B." surname="Leiba" fullname="B. Leiba"/>
+            <date year="2017" month="May"/>
+          </front>
+          <seriesInfo name="BCP" value="14"/>
+          <seriesInfo name="RFC" value="8174"/>
+        </reference>
+
+        <reference anchor="RFC4122" target="https://www.rfc-editor.org/info/rfc4122">
+          <front>
+            <title>A Universally Unique IDentifier (UUID) URN Namespace</title>
+            <author initials="P." surname="Leach" fullname="P. Leach"/>
+            <author initials="M." surname="Mealling" fullname="M. Mealling"/>
+            <author initials="R." surname="Salz" fullname="R. Salz"/>
+            <date year="2005" month="July"/>
+          </front>
+          <seriesInfo name="RFC" value="4122"/>
+        </reference>
+
+        <reference anchor="RFC4648" target="https://www.rfc-editor.org/info/rfc4648">
+          <front>
+            <title>The Base16, Base32, and Base64 Data Encodings</title>
+            <author initials="S." surname="Josefsson" fullname="S. Josefsson"/>
+            <date year="2006" month="October"/>
+          </front>
+          <seriesInfo name="RFC" value="4648"/>
+        </reference>
+
+        <reference anchor="RFC3161" target="https://www.rfc-editor.org/info/rfc3161">
+          <front>
+            <title>Internet X.509 Public Key Infrastructure Time-Stamp Protocol (TSP)</title>
+            <author initials="C." surname="Adams" fullname="C. Adams"/>
+            <author initials="P." surname="Cain" fullname="P. Cain"/>
+            <author initials="D." surname="Pinkas" fullname="D. Pinkas"/>
+            <author initials="R." surname="Zuccherato" fullname="R. Zuccherato"/>
+            <date year="2001" month="August"/>
+          </front>
+          <seriesInfo name="RFC" value="3161"/>
+        </reference>
+
+        <reference anchor="RFC8785" target="https://www.rfc-editor.org/info/rfc8785">
+          <front>
+            <title>JSON Canonicalization Scheme (JCS)</title>
+            <author initials="A." surname="Rundgren" fullname="A. Rundgren"/>
+            <author initials="B." surname="Jordan" fullname="B. Jordan"/>
+            <author initials="S." surname="Erdtman" fullname="S. Erdtman"/>
+            <date year="2020" month="June"/>
+          </front>
+          <seriesInfo name="RFC" value="8785"/>
+        </reference>
+
+        <reference anchor="RFC6838" target="https://www.rfc-editor.org/info/rfc6838">
+          <front>
+            <title>Media Type Specifications and Registration Procedures</title>
+            <author initials="N." surname="Freed" fullname="N. Freed"/>
+            <author initials="J." surname="Klensin" fullname="J. Klensin"/>
+            <author initials="T." surname="Hansen" fullname="T. Hansen"/>
+            <date year="2013" month="January"/>
+          </front>
+          <seriesInfo name="BCP" value="13"/>
+          <seriesInfo name="RFC" value="6838"/>
+        </reference>
+
+        <reference anchor="RFC8126" target="https://www.rfc-editor.org/info/rfc8126">
+          <front>
+            <title>Guidelines for Writing an IANA Considerations Section in RFCs</title>
+            <author initials="M." surname="Cotton" fullname="M. Cotton"/>
+            <author initials="B." surname="Leiba" fullname="B. Leiba"/>
+            <author initials="T." surname="Narten" fullname="T. Narten"/>
+            <date year="2017" month="June"/>
+          </front>
+          <seriesInfo name="BCP" value="26"/>
+          <seriesInfo name="RFC" value="8126"/>
+        </reference>
+      </references>
+
+      <references>
+        <name>Informative References</name>
+
+        <reference anchor="AAT" target="https://datatracker.ietf.org/doc/draft-sharif-agent-audit-trail/">
+          <front>
+            <title>Agent Audit Trail</title>
+            <author initials="S." surname="Sharif" fullname="S. Sharif"/>
+            <date year="2026"/>
+          </front>
+          <seriesInfo name="Internet-Draft" value="draft-sharif-agent-audit-trail"/>
+        </reference>
+
+        <reference anchor="EUAIACT" target="https://eur-lex.europa.eu/eli/reg/2024/1689/oj">
+          <front>
+            <title>Regulation (EU) 2024/1689 of the European Parliament and of the Council laying down harmonised rules on artificial intelligence (Artificial Intelligence Act)</title>
+            <author><organization>European Union</organization></author>
+            <date year="2024" month="June"/>
+          </front>
+        </reference>
+
+        <reference anchor="ISO42001">
+          <front>
+            <title>ISO/IEC 42001:2023 Information technology, Artificial intelligence, Management system</title>
+            <author><organization>ISO/IEC</organization></author>
+            <date year="2023"/>
+          </front>
+        </reference>
+
+        <reference anchor="SOC2">
+          <front>
+            <title>Trust Services Criteria for Security, Availability, Processing Integrity, Confidentiality, and Privacy</title>
+            <author><organization>AICPA</organization></author>
+            <date year="2017"/>
+          </front>
+        </reference>
+
+        <reference anchor="HIPAA">
+          <front>
+            <title>HIPAA Security Rule, 45 CFR Part 164 Subpart C</title>
+            <author><organization>U.S. Department of Health and Human Services</organization></author>
+            <date year="2013"/>
+          </front>
+        </reference>
+      </references>
+    </references>
+
+    <section anchor="app-eu-ai-act" numbered="false">
+      <name>Appendix A. EU AI Act Article 12 Mapping</name>
+      <t>
+        Regulation (EU) 2024/1689 Article 12 requires that high-
+        risk AI systems be designed to automatically record
+        events ("logs") over the lifetime of the system. RCR/1
+        addresses the external-effect portion of that
+        requirement as follows.
+      </t>
+      <dl>
+        <dt>Article 12(1) automatic recording</dt>
+        <dd>
+          An adapter MUST emit an RCR/1 record for every
+          external action attributable to the AI system.
+        </dd>
+        <dt>Article 12(2)(a) recording period</dt>
+        <dd>
+          The issued_at field provides the wall-clock binding
+          required to demonstrate operation over a stated period.
+        </dd>
+        <dt>Article 12(2)(b) reference database</dt>
+        <dd>
+          The source.vendor and source.endpoint fields identify
+          the external database or system involved in each
+          action.
+        </dd>
+        <dt>Article 12(2)(c) input data</dt>
+        <dd>
+          The claims array carries hashes of input values
+          where direct retention is prohibited by
+          <xref target="pii"/>.
+        </dd>
+        <dt>Article 12(2)(d) natural persons involved</dt>
+        <dd>
+          The subject.principal_id field, hashed per
+          <xref target="pii"/> where required, identifies the
+          natural person on whose behalf the action was taken.
+        </dd>
+      </dl>
+    </section>
+
+    <section anchor="app-iso" numbered="false">
+      <name>Appendix B. ISO/IEC 42001 Mapping</name>
+      <t>
+        ISO/IEC 42001:2023 control objectives addressed by
+        RCR/1:
+      </t>
+      <dl>
+        <dt>A.6.2.6 AI system operation logs</dt>
+        <dd>
+          The chain object and SHA-256 receipt hashing provide
+          tamper-evident operation logs.
+        </dd>
+        <dt>A.7.3 Data quality</dt>
+        <dd>
+          The claim strength taxonomy in
+          <xref target="strength-details"/> explicitly bounds
+          the confidence that may be asserted for any data
+          point.
+        </dd>
+        <dt>A.9.2 Performance monitoring</dt>
+        <dd>
+          The effect field provides structured success/failure
+          telemetry suitable for management review.
+        </dd>
+        <dt>A.10.4 Third-party relationships</dt>
+        <dd>
+          The source object and evidence.witness_class field
+          document the dependence on each third party and the
+          strength of its attestation.
+        </dd>
+      </dl>
+    </section>
+
+    <section anchor="app-soc2" numbered="false">
+      <name>Appendix C. SOC 2 Mapping</name>
+      <t>
+        SOC 2 Trust Services Criteria addressed by RCR/1:
+      </t>
+      <dl>
+        <dt>CC7.2 system monitoring</dt>
+        <dd>
+          Continuous emission of RCR/1 records provides the
+          monitoring evidence required by CC7.2.
+        </dd>
+        <dt>CC7.3 incident evaluation</dt>
+        <dd>
+          The effect field combined with the chain pointer
+          permits forensic reconstruction of any incident.
+        </dd>
+        <dt>PI1.2 processing integrity</dt>
+        <dd>
+          The no-float rule and rcr-jcs-1 canonicalization
+          eliminate numeric drift in monetary and quantitative
+          claims.
+        </dd>
+        <dt>CC6.1 logical access</dt>
+        <dd>
+          The issuer and subject objects record the principal
+          and agent identities for each external action.
+        </dd>
+      </dl>
+    </section>
+
+  </back>
+</rfc>
